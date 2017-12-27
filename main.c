@@ -1,7 +1,7 @@
 #include "pl0.h"
 
 int main(int argc, const char * argv[]) {
-    FILE * ifp = fopen("/Users/yzhq/Code/C/YZQ-PL0/YZQ-PL0/test/test9.txt", "r");
+    FILE * ifp = fopen("/Users/yzhq/Code/C/YZQ-PL0/YZQ-PL0/test/testrepeat.pas", "r");
     
     int output_lex = 0;
     int output_sym = 0;

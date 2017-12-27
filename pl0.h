@@ -25,15 +25,16 @@ extern int errorCount;
 
 //词法分析数据结构
 typedef enum {
-    nul_sym = 1, ident_sym, number_sym, plus_sym, minus_sym,
+    illegal_sym,
+    nul_sym, ident_sym, number_sym, plus_sym, minus_sym,
     mult_sym,  slash_sym, odd_sym, eq_sym, neq_sym, les_sym, leq_sym,
     gtr_sym, geq_sym, lparent_sym, rparent_sym, comma_sym, semicolon_sym,
     period_sym, becomes_sym, begin_sym, end_sym, if_sym, then_sym,
     while_sym, do_sym, call_sym, const_sym, var_sym, proc_sym, write_sym,
-    read_sym , else_sym
+    read_sym , else_sym, repeat_sym, until_sym
 } token_t;
 
-extern const char * token_str[34];
+extern const char * token_str[36];
 
 typedef struct {
     token_t token;

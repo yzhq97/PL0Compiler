@@ -1,7 +1,5 @@
 #include "pl0.h"
 
-//TODO 按书上重新整理错误代码
-
 //递归下降函数
 //lev: 层次
 //dx: 数据在栈中的位置
@@ -15,6 +13,7 @@ void condition(int lev, int * ptx);
 void expression(int lev, int * ptx);
 void term(int lev, int * ptx);
 void factor(int lev, int * ptx);
+void identifier(int lev, int * ptx);
 
 //工具函数
 void emit(int op, int l, int a); //保存指令
@@ -22,7 +21,7 @@ void enter(symtype_t k, int * ptx, int * pdx, int lev); //保存符号表
 void error(int errcase); //报错
 
 int nxtok(); //读取下一个token
-int position(char * identifier, int * ptx, int lev); //定位某个标识符
+int position(char * ident, int * ptx, int lev); //定位某个标识符
 
 //变量定义
 
@@ -33,7 +32,7 @@ int code_length;
 
 int lx=0, cx=0, tx=0,
     token, num, type, errcnt=0, diff, prev_diff=0;
-char identifier[IDENTIFIER_LENGTH];
+char ident[IDENTIFIER_LENGTH];
 
 void parse() {
     program();
@@ -152,7 +151,7 @@ void statement(int lev, int *ptx) {
     
     //<赋值语句> ::= <标识符>:=<表达式>
     if (token == ident_sym) {
-        i = position(identifier, ptx, lev);
+        i = position(ident, ptx, lev);
         if (i == 0) error(11);
         else if (sym_table[i].type != var_type) {
             error(12);
@@ -172,7 +171,7 @@ void statement(int lev, int *ptx) {
         token = nxtok();
         if (token != ident_sym) error(14);
         else {
-            i = position(identifier, ptx, lev);
+            i = position(ident, ptx, lev);
             if (i == 0) error(11);
             else if (sym_table[i].type == proc_type) {
                 emit(cal_op, lev-sym_table[i].level, sym_table[i].addr);
@@ -227,34 +226,60 @@ void statement(int lev, int *ptx) {
         condition(lev,ptx);
         cx2 = cx;
         emit(jpc_op, 0, 0); // 等待设置 jpc 位置
-        if(token == do_sym) token = nxtok();
-        else error(18);
+        if(token == do_sym) token = nxtok(); else error(18);
         statement(lev, ptx);
         emit(jmp_op, 0, cx1);
         code[cx2].a = cx; // 设置 jpc 位置
     }
     
+    //<重复语句> ::= repeat<语句>{;<语句>}until<条件>
+    else if (token == repeat_sym) {
+        cx1 = cx;
+        do {
+            token = nxtok();
+            statement(lev, ptx);
+        } while (token == semicolon_sym);
+        
+        if (token == until_sym) {
+            token = nxtok();
+            condition(lev, ptx);
+            emit(jpc_op, 0, cx1);
+        } else error(27);
+    }
+    
     //<写语句> ::= write'('<标识符>{,<标识符>}')'
-    //TODO
     else if (token == write_sym) {
         token = nxtok();
-        expression(lev, ptx);
-        emit(wrt_op, 0, 1);
+        if (token == lparent_sym) {
+            do {
+                token = nxtok();
+                identifier(lev, ptx);
+                emit(wrt_op, 0, 1);
+            } while (token == comma_sym);
+            if (token != rparent_sym) error(22);
+        } else error(28);
+        token = nxtok();
     }
     
     //<读语句> ::= read'('<标识符>{,<标识符>}')'
-    //TODO
     else if (token == read_sym) {
         token = nxtok();
-        emit(red_op, 0, 2);
-        i = position(identifier, ptx, lev);
-        if (i == 0) error(11);
-        else if (sym_table[i].type != var_type) { //var
-            error(12);
-            i = 0;
-        }
-        if (i != 0)
-            emit(sto_op, lev-sym_table[i].level, sym_table[i].addr);
+        if (token == lparent_sym) {
+            do {
+                token = nxtok();
+                emit(red_op, 0, 0);
+                i = position(ident, ptx, lev);
+                if (i == 0) error(11);
+                else if (sym_table[i].type != var_type) {
+                    error(12);
+                    i = 0;
+                }
+                if (i != 0)
+                    emit(sto_op, lev-sym_table[i].level, sym_table[i].addr);
+                token = nxtok();
+            } while (token == comma_sym);
+            if (token != rparent_sym) error(22);
+        } else error(28);
         token = nxtok();
     }
     
@@ -344,25 +369,10 @@ void term(int lev, int *ptx) {
 
 //<因子> ::= <标识符>|<无符号整数>|'('<表达式>')'
 void factor(int lev, int *ptx) {
-    int i, level, adr, val;
-    
     while ((token==ident_sym)||(token==number_sym)||(token==lparent_sym)){
-        //<标识符> ::= <字母>{<字母>|<数字>}
+        //<标识符>
         if (token==ident_sym) {
-            i = position(identifier, ptx, lev);
-            if (i==0) error(11);
-            else {
-                type = sym_table[i].type;
-                level = sym_table[i].level;
-                adr = sym_table[i].addr;
-                val = sym_table[i].val;
-                if (type == const_type)
-                    emit(lit_op, 0, val);
-                else if (type == var_type)
-                    emit(lod_op, lev-level, adr);
-                else error(21);
-            }
-            token = nxtok();
+            identifier(lev, ptx);
         }
         
         //<无符号整数> ::= <数字>{<数字>}
@@ -386,6 +396,25 @@ void factor(int lev, int *ptx) {
     }
 }
 
+//<标识符> ::= <字母>{<字母>|<数字>}
+void identifier (int lev, int * ptx) {
+    int i, type, level, adr, val;
+    i = position(ident, ptx, lev);
+    if (i == 0) error(11);
+    else {
+        type = sym_table[i].type;
+        level = sym_table[i].level;
+        adr = sym_table[i].addr;
+        val = sym_table[i].val;
+        if (type == const_type)
+            emit(lit_op, 0, val);
+        else if (type == var_type)
+            emit(lod_op, lev-level, adr);
+        else error(21);
+    }
+    token = nxtok();
+}
+
 
 //*****************************
 //********* 工具函数 ***********
@@ -406,7 +435,7 @@ void emit (int op, int l, int a) {
 void enter(symtype_t t, int * ptx, int * pdx, int lev) {
     
     (*ptx)++;
-    strcpy(sym_table[*ptx].name, identifier);
+    strcpy(sym_table[*ptx].name, ident);
 
     sym_table[*ptx].type = t;
     if (t == const_type) {
@@ -424,11 +453,11 @@ void enter(symtype_t t, int * ptx, int * pdx, int lev) {
     }
 }
 
-//取出 lex 表的下一个 lex，如果是变量名将变量名放在 identifier 中，如果是数字将 值放在 num 中
+//取出 lex 表的下一个 lex，如果是变量名将变量名放在 ident 中，如果是数字将 值放在 num 中
 int nxtok () {
     token = lex_list[lx].token;
     if(token == ident_sym)
-        strcpy(identifier, lex_list[lx].name);
+        strcpy(ident, lex_list[lx].name);
     else if(token == number_sym)
         num = lex_list[lx].value;
     
@@ -437,13 +466,13 @@ int nxtok () {
 }
 
 //遇到某个符号时，找到符号表中，当前层次以外的，最靠里层的可用的符号定义
-int position (char * identifier, int * ptx, int lev) {
+int position (char * ident, int * ptx, int lev) {
     int s = *ptx;
     int current_s = s;
     int diff_cnt = 0;
     
     while (s != 0) {
-        if (strcmp(sym_table[s].name, identifier) == 0) {
+        if (strcmp(sym_table[s].name, ident) == 0) {
             if(sym_table[s].level <= lev) {
                 if (diff_cnt != 0) prev_diff = diff;
                 diff = lev - sym_table[s].level;
@@ -471,11 +500,11 @@ void error(int errcase) {
             break;
         case 3:
             printf("Error 3: ");
-            printf("Identifier must be followed by =.\n");
+            printf("ident must be followed by =.\n");
             break;
         case 4:
             printf("Error 4: ");
-            printf("const, var, procedure must be followed by identifierentifier.\n");
+            printf("const, var, procedure must be followed by identifier.\n");
             break;
         case 5:
             printf("Error 5: ");
@@ -503,7 +532,7 @@ void error(int errcase) {
             break;
         case 11:
             printf("Error 11: ");
-            printf("Undeclared identifierentifier.\n");
+            printf("Undeclared identifier.\n");
             break;
         case 12:
             printf("Error 12: ");
@@ -515,7 +544,7 @@ void error(int errcase) {
             break;
         case 14:
             printf("Error 14: ");
-            printf("call must be followed by an identifierentifier\n");
+            printf("call must be followed by an identifier\n");
             break;
         case 15:
             printf("Error 15: ");
@@ -543,7 +572,7 @@ void error(int errcase) {
             break;
         case 21:
             printf("Error 21: ");
-            printf("Expression must not contain a procedure identifierentifier.\n");
+            printf("Expression must not contain a procedure identifier.\n");
             break;
         case 22:
             printf("Error 22: ");
@@ -565,7 +594,16 @@ void error(int errcase) {
             printf("Error: 26 ");
             printf("Level is larger than the maximum allowed lexicographical levels!\n");
             break;
+        case 27:
+            printf("Error: 27 ");
+            printf("Expected until after repeat statements\n");
+            break;
+        case 28:
+            printf("Error: 28 ");
+            printf("Expected ( after read or write\n");
+            break;
         default:
+            printf("Unknown Error\n");
             break;
     }
     exit(1);

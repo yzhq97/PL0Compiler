@@ -9,8 +9,8 @@ const char* reserver[]={
     "const", "var", "procedure", "call",
     "begin", "end", "if", "then",
     "else", "while", "do", "read",
-    "write", "odd"
-}; //14
+    "write", "odd", "repeat", "until"
+}; //16
 
 const char special_symbols[]={
     '+', '-', '*', '/',
@@ -56,7 +56,7 @@ void lex (FILE * ifp) {
             
             //检查保留字
             int is_reserver = -1;
-            for (int i = 0; i < 14; i++)
+            for (int i = 0; i < 16; i++)
                 if (strcmp(buf, reserver[i]) == 0) {
                     is_reserver = i;
                     break;
@@ -104,6 +104,12 @@ void lex (FILE * ifp) {
                     break;
                 case 13:
                     lex_list[lex_ind].token = odd_sym;
+                    break;
+                case 14:
+                    lex_list[lex_ind].token = repeat_sym;
+                    break;
+                case 15:
+                    lex_list[lex_ind].token = until_sym;
                     break;
                     
                 default:
